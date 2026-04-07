@@ -3,49 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>アイコン付きチャット</title>
+    <title>高機能チャット</title>
     <style>
         body { font-family: sans-serif; background-color: #7494c0; margin: 0; display: flex; flex-direction: column; height: 100vh; }
         #messages { list-style-type: none; margin: 0; padding: 20px; flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; }
-
-        /* メッセージ全体の枠 */
-        .msg-container { display: flex; margin-bottom: 15px; align-items: flex-start; }
         
-        /* アイコンのスタイル */
-        .avatar { width: 40px; height: 40px; border-radius: 50%; background-color: #eee; margin: 0 10px; object-fit: cover; flex-shrink: 0; }
-
+        .msg-container { display: flex; margin-bottom: 15px; align-items: flex-start; }
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: #eee; margin: 0 10px; object-fit: cover; flex-shrink: 0; }
         .msg-content { max-width: 70%; display: flex; flex-direction: column; }
-        .msg-item { padding: 10px; border-radius: 15px; position: relative; line-height: 1.4; word-wrap: break-word; }
-        .name-label { font-size: 0.7em; margin-bottom: 3px; font-weight: bold; color: rgba(255,255,255,0.8); }
+        .msg-item { padding: 10px; border-radius: 15px; word-wrap: break-word; background: white; }
+        .name-label { font-size: 0.7em; margin-bottom: 3px; font-weight: bold; color: white; }
+        
+        /* 画像メッセージ用 */
+        .chat-img { max-width: 100%; border-radius: 10px; margin-top: 5px; display: block; }
 
-        /* 自分のメッセージ（右側） */
         .my-row { flex-direction: row-reverse; }
-        .my-msg { background-color: #85e249; border-top-right-radius: 2px; color: #000; }
+        .my-msg { background-color: #85e249; border-top-right-radius: 2px; }
         .my-row .name-label { text-align: right; }
-
-        /* 他人のメッセージ（左側） */
         .other-row { flex-direction: row; }
-        .other-msg { background-color: #ffffff; border-top-left-radius: 2px; color: #000; }
+        .other-msg { border-top-left-radius: 2px; }
 
-        /* 入力エリア */
-        #form { display: flex; flex-wrap: wrap; background: #fff; padding: 10px; border-top: 1px solid #ccc; }
-        .input-group { display: flex; width: 100%; margin-bottom: 5px; }
-        #user-name, #user-avatar { padding: 8px; border: 1px solid #ddd; border-radius: 5px; margin-right: 5px; font-size: 12px; }
-        #user-name { width: 80px; }
-        #user-avatar { flex-grow: 1; }
+        #form { background: #fff; padding: 10px; border-top: 1px solid #ccc; }
+        .settings-row { display: flex; gap: 5px; margin-bottom: 8px; }
+        #user-name, #user-avatar { padding: 5px; border: 1px solid #ddd; border-radius: 5px; font-size: 12px; }
+        .input-row { display: flex; gap: 5px; align-items: center; }
         #input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
-        button { background: #00b900; color: white; border: none; padding: 10px 20px; border-radius: 20px; margin-left: 5px; cursor: pointer; font-weight: bold; }
+        
+        /* ファイル選択ボタンを隠してアイコン化 */
+        #file-input { display: none; }
+        .file-label { cursor: pointer; font-size: 20px; padding: 0 10px; }
+        button { background: #00b900; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
     <ul id="messages"></ul>
     <form id="form">
-        <div class="input-group">
+        <div class="settings-row">
             <input id="user-name" placeholder="名前" required />
-            <input id="user-avatar" placeholder="アイコン画像のURL (空でもOK)" />
+            <input id="user-avatar" placeholder="アイコンURL (任意)" />
         </div>
-        <input id="input" autocomplete="off" placeholder="メッセージを入力..." required />
-        <button>送信</button>
+        <div class="input-row">
+            <label class="file-label">
+                <input type="file" id="file-input" accept="image/*"> 📷
+            </label>
+            <input id="input" autocomplete="off" placeholder="メッセージ..." />
+            <button type="submit">送信</button>
+        </div>
     </form>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -55,39 +58,55 @@
         const input = document.getElementById('input');
         const nameInput = document.getElementById('user-name');
         const avatarInput = document.getElementById('user-avatar');
+        const fileInput = document.getElementById('file-input');
         const messages = document.getElementById('messages');
 
-        // デフォルトアイコン
-        const defaultAvatar = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+        // --- ローカルストレージ機能 ---
+        // ページ読み込み時に保存された情報を入れる
+        nameInput.value = localStorage.getItem('chat-name') || '';
+        avatarInput.value = localStorage.getItem('chat-avatar') || '';
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
-            if (input.value && nameInput.value) {
+            
+            // 入力内容をブラウザに保存
+            localStorage.setItem('chat-name', nameInput.value);
+            localStorage.setItem('chat-avatar', avatarInput.value);
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            const sendData = (imageSrc = null) => {
                 socket.emit('chat message', {
                     name: nameInput.value,
                     text: input.value,
-                    avatar: avatarInput.value || defaultAvatar
+                    avatar: avatarInput.value || "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+                    image: imageSrc
                 });
                 input.value = '';
+                fileInput.value = ''; // ファイル選択をリセット
+            };
+
+            if (file) {
+                // 画像がある場合は読み込んでから送信
+                reader.onload = (e) => sendData(e.target.result);
+                reader.readAsDataURL(file);
+            } else if (input.value) {
+                sendData();
             }
         });
 
         socket.on('chat message', (data) => {
             const container = document.createElement('li');
-            container.classList.add('msg-container');
+            container.classList.add('msg-container', data.id === socket.id ? 'my-row' : 'other-row');
             
-            if (data.id === socket.id) {
-                container.classList.add('my-row');
-            } else {
-                container.classList.add('other-row');
-            }
+            let contentHTML = `<span class="name-label">${data.name}</span>`;
+            if (data.text) contentHTML += `<div class="msg-item ${data.id === socket.id ? 'my-msg' : 'other-msg'}">${data.text}</div>`;
+            if (data.image) contentHTML += `<img src="${data.image}" class="chat-img">`;
 
             container.innerHTML = `
-                <img class="avatar" src="${data.avatar}" onerror="this.src='${defaultAvatar}'">
-                <div class="msg-content">
-                    <span class="name-label">${data.name}</span>
-                    <div class="msg-item ${data.id === socket.id ? 'my-msg' : 'other-msg'}">${data.text}</div>
-                </div>
+                <img class="avatar" src="${data.avatar}">
+                <div class="msg-content">${contentHTML}</div>
             `;
             
             messages.appendChild(container);
