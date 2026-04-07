@@ -3,25 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>最強チャット (DB・ルーム・既読)</title>
+    <title>通知＆左右分けチャット</title>
     <style>
-        /* 既存のスタイルを継承しつつ追加 */
-        #room-select-area { background: #fff; padding: 10px; border-bottom: 1px solid #ccc; display: flex; gap: 10px; align-items: center; }
-        .read-mark { font-size: 0.6em; color: #85e249; margin-right: 5px; align-self: flex-end; visibility: hidden; }
-        .is-read { visibility: visible; }
-        /* 自分のメッセージの横に既読を出す */
-        .my-row .read-mark { order: 1; }
+        body { font-family: sans-serif; background-color: #7494c0; background-size: cover; background-position: center; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        #messages { list-style-type: none; margin: 0; padding: 20px; flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        .msg-container { display: flex; margin-bottom: 15px; align-items: flex-start; width: 100%; }
+        .avatar { width: 40px; height: 40px; border-radius: 50%; background: #eee; margin: 0 10px; object-fit: cover; flex-shrink: 0; }
+        .msg-content { max-width: 70%; display: flex; flex-direction: column; }
+        .msg-item { padding: 10px; border-radius: 15px; word-wrap: break-word; background: white; border: 1px solid rgba(0,0,0,0.1); }
+        .name-label { font-size: 0.7em; margin-bottom: 3px; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+        
+        /* 自分のメッセージ（右側） */
+        .my-row { flex-direction: row-reverse; }
+        .my-msg { background-color: #85e249; border-top-right-radius: 2px; }
+        .my-row .name-label { text-align: right; }
+
+        /* 他人のメッセージ（左側） */
+        .other-row { flex-direction: row; }
+        .other-msg { background-color: #ffffff; border-top-left-radius: 2px; }
+
+        .chat-img { max-width: 100%; border-radius: 10px; margin-top: 5px; display: block; }
+
+        #form { background: #fff; padding: 10px; border-top: 1px solid #ccc; display: flex; gap: 5px; align-items: center; }
+        #file-input { display: none; }
+        .file-label, .settings-btn { cursor: pointer; font-size: 20px; padding: 5px 10px; background: #eee; border-radius: 5px; }
+        #input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        button[type="submit"] { background: #00b900; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        
+        /* 設定モーダル */
+        #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 20px; border-radius: 10px; width: 80%; max-width: 400px; display: flex; flex-direction: column; gap: 10px; }
+        .preview-avatar { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; align-self: center; border: 1px solid #ddd; }
     </style>
 </head>
 <body>
-    <div id="room-select-area">
-        <input id="room-input" placeholder="部屋名（例: 家族, 秘密）" />
-        <button id="join-btn">入室</button>
-        <span id="current-room-display" style="font-weight:bold; margin-left:auto;">未入室</span>
-    </div>
-
     <ul id="messages"></ul>
-
     <form id="form">
         <span class="settings-btn" id="open-settings">⚙️</span>
         <label class="file-label"><input type="file" id="file-input" accept="image/*"> 📷</label>
@@ -29,70 +46,102 @@
         <button type="submit">送信</button>
     </form>
 
+    <div id="settings-modal">
+        <div class="modal-content">
+            <h3>設定</h3>
+            <label>名前</label><input type="text" id="user-name" placeholder="名前">
+            <label>アイコン</label><img id="avatar-preview" class="preview-avatar"><input type="file" id="avatar-input" accept="image/*">
+            <label>背景</label><input type="file" id="bg-input" accept="image/*">
+            <button id="save-settings" style="background:#00b900; color:white; padding:10px; border:none; border-radius:5px;">保存</button>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        let currentRoom = "";
+        const messages = document.getElementById('messages');
+        const defaultAvatar = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
-        // ルーム入室処理
-        document.getElementById('join-btn').onclick = () => {
-            currentRoom = document.getElementById('room-input').value || "public";
-            socket.emit('join room', currentRoom);
-            document.getElementById('current-room-display').innerText = `部屋: ${currentRoom}`;
-            document.getElementById('messages').innerHTML = '';
+        // 通知の許可を求める
+        if (Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
+
+        const loadSettings = () => {
+            document.getElementById('user-name').value = localStorage.getItem('chat-name') || '';
+            document.getElementById('avatar-preview').src = localStorage.getItem('chat-avatar') || defaultAvatar;
+            const bg = localStorage.getItem('chat-bg');
+            if (bg) document.body.style.backgroundImage = `url(${bg})`;
         };
+        loadSettings();
 
+        // メッセージ表示関数
         const displayMessage = (data) => {
-            const isMe = (data.name === localStorage.getItem('chat-name'));
+            // 【重要】自分の名前と一致するか、またはソケットIDが一致するかで左右を判定
+            const myName = localStorage.getItem('chat-name');
+            const isMe = (data.id === socket.id) || (data.name === myName && myName !== "");
+
             const container = document.createElement('li');
             container.classList.add('msg-container', isMe ? 'my-row' : 'other-row');
-            container.id = `msg-${data._id}`; // 既読更新用にIDを振る
-
-            // 既読マークのHTML
-            const readHTML = isMe ? `<span class="read-mark ${data.read ? 'is-read' : ''}">既読</span>` : '';
+            
+            let contentHTML = `<span class="name-label">${data.name}</span>`;
+            if (data.text) contentHTML += `<div class="msg-item ${isMe ? 'my-msg' : 'other-msg'}">${data.text}</div>`;
+            if (data.image) contentHTML += `<img src="${data.image}" class="chat-img">`;
 
             container.innerHTML = `
-                <img class="avatar" src="${data.avatar}">
-                <div class="msg-content">
-                    <span class="name-label">${data.name}</span>
-                    <div style="display:flex;">
-                        ${readHTML}
-                        <div class="msg-item ${isMe ? 'my-msg' : 'other-msg'}">
-                            ${data.text ? data.text : ''}
-                            ${data.image ? `<img src="${data.image}" class="chat-img">` : ''}
-                        </div>
-                    </div>
-                </div>
+                <img class="avatar" src="${data.avatar}" onerror="this.src='${defaultAvatar}'">
+                <div class="msg-content">${contentHTML}</div>
             `;
-            document.getElementById('messages').appendChild(container);
-            
-            // 自分以外が送った未読メッセージなら既読にする
-            if (!isMe && !data.read) {
-                socket.emit('mark read', data._id);
+            messages.appendChild(container);
+            messages.scrollTop = messages.scrollHeight;
+
+            // 通知を送る（自分が送ったものではなく、かつタブが非表示の時）
+            if (!isMe && document.hidden && Notification.permission === "granted") {
+                new Notification(data.name, { body: data.text || "画像を送信しました", icon: data.avatar });
             }
         };
 
-        socket.on('load log', (log) => log.forEach(displayMessage));
+        socket.on('load log', (log) => { messages.innerHTML = ''; log.forEach(displayMessage); });
         socket.on('chat message', displayMessage);
-        
-        // 既読表示の更新
-        socket.on('update read', (msgId) => {
-            const el = document.querySelector(`#msg-${msgId} .read-mark`);
-            if (el) el.classList.add('is-read');
-        });
 
-        // 送信時はcurrentRoomを添える
         document.getElementById('form').onsubmit = (e) => {
             e.preventDefault();
-            if (!currentRoom) return alert("部屋に入ってください");
-            // ... (画像読み込み処理は前回と同じ) ...
-            socket.emit('chat message', {
-                room: currentRoom,
-                name: localStorage.getItem('chat-name'),
-                text: document.getElementById('input').value,
-                avatar: localStorage.getItem('chat-avatar'),
-                image: img // FileReaderで読んだデータ
-            });
+            const file = document.getElementById('file-input').files[0];
+            const send = (img = null) => {
+                socket.emit('chat message', {
+                    name: document.getElementById('user-name').value || '名無し',
+                    text: document.getElementById('input').value,
+                    avatar: document.getElementById('avatar-preview').src,
+                    image: img
+                });
+                document.getElementById('input').value = '';
+                document.getElementById('file-input').value = '';
+            };
+            if (file) {
+                const r = new FileReader(); r.onload = (e) => send(e.target.result); r.readAsDataURL(file);
+            } else if (document.getElementById('input').value) {
+                send();
+            }
+        };
+
+        // 設定モーダルの開閉と保存（前回と同様）
+        document.getElementById('open-settings').onclick = () => document.getElementById('settings-modal').style.display = 'flex';
+        document.getElementById('save-settings').onclick = () => {
+            localStorage.setItem('chat-name', document.getElementById('user-name').value);
+            localStorage.setItem('chat-avatar', document.getElementById('avatar-preview').src);
+            const bgF = document.getElementById('bg-input').files[0];
+            if (bgF) {
+                const r = new FileReader(); r.onload = (e) => { 
+                    localStorage.setItem('chat-bg', e.target.result); 
+                    document.body.style.backgroundImage = `url(${e.target.result})`; 
+                    location.reload(); // 左右判定を確定させるためリロード
+                }; r.readAsDataURL(bgF);
+            } else {
+                location.reload(); 
+            }
+        };
+        document.getElementById('avatar-input').onchange = (e) => {
+            const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onload = (ev) => document.getElementById('avatar-preview').src = ev.target.result; r.readAsDataURL(f); }
         };
     </script>
 </body>
