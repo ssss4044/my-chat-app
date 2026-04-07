@@ -7,11 +7,11 @@ const io = require('socket.io')(http);
 app.use(express.static(__dirname + '/public'));
 
 io.on('connection', (socket) => {
-    console.log('誰かがチャットに参加しました');
+    console.log('ユーザーが接続しました');
 
     // メッセージを受け取った時の処理
     socket.on('chat message', (data) => {
-        // 全員（自分含む）にメッセージと名前、送信者のIDを送り出す
+        // 全員（自分含む）にメッセージ、名前、送信者のIDを送り出す
         io.emit('chat message', {
             name: data.name,
             text: data.text,
@@ -20,12 +20,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        console.log('誰かが退出しました');
+        console.log('ユーザーが切断しました');
     });
 });
 
-// ポート番号の設定（環境変数PORTがあればそれを使い、なければ3000を使う）
+// Renderなどの環境では process.env.PORT が自動で割り当てられます
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
+
+// "0.0.0.0" を指定することで、外部（インターネット）からのアクセスを許可します
+http.listen(PORT, "0.0.0.0", () => {
     console.log(`サーバーが起動しました。ポート: ${PORT}`);
 });
