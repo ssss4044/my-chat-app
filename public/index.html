@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>世界とつながるチャット</title>
+    <style>
+        /* LINE風の背景色と基本設定 */
+        body { font-family: sans-serif; background-color: #7494c0; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        
+        /* メッセージ表示エリア */
+        #messages { list-style-type: none; margin: 0; padding: 20px; flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; }
+        
+        /* メッセージの共通スタイル */
+        .msg-item { max-width: 80%; margin-bottom: 15px; padding: 10px; border-radius: 15px; position: relative; line-height: 1.4; word-wrap: break-word; }
+        .name-label { font-size: 0.7em; margin-bottom: 3px; display: block; font-weight: bold; }
+
+        /* 自分のメッセージ（右・緑） */
+        .my-msg { align-self: flex-end; background-color: #85e249; border-top-right-radius: 2px; color: #000; }
+        .my-msg .name-label { text-align: right; color: #444; }
+
+        /* 他人のメッセージ（左・白） */
+        .other-msg { align-self: flex-start; background-color: #ffffff; border-top-left-radius: 2px; color: #000; }
+        .other-msg .name-label { text-align: left; color: #666; }
+
+        /* 入力フォームエリア */
+        #form { display: flex; background: #fff; padding: 10px; border-top: 1px solid #ccc; }
+        #user-name { width: 70px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-right: 5px; }
+        #input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        button { background: #00b900; color: white; border: none; padding: 10px 15px; border-radius: 20px; margin-left: 5px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <ul id="messages"></ul>
+    <form id="form">
+        <input id="user-name" placeholder="名前" required />
+        <input id="input" autocomplete="off" placeholder="メッセージを入力..." required />
+        <button>送信</button>
+    </form>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const nameInput = document.getElementById('user-name');
+        const messages = document.getElementById('messages');
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (input.value && nameInput.value) {
+                // 名前とメッセージ、自分のIDをセットで送信
+                socket.emit('chat message', {
+                    name: nameInput.value,
+                    text: input.value
+                });
+                input.value = '';
+            }
+        });
+
+        socket.on('chat message', (data) => {
+            const item = document.createElement('li');
+            item.classList.add('msg-item');
+            
+            // サーバーから送られてきたデータと、自分の今の接続IDを比較
+            // 送信直後は判定が難しいため、簡易的にクラスを割り振ります
+            if (data.id === socket.id) {
+                item.classList.add('my-msg');
+            } else {
+                item.classList.add('other-msg');
+            }
+
+            item.innerHTML = `<span class="name-label">${data.name}</span>${data.text}`;
+            messages.appendChild(item);
+            // 常に最新のメッセージが見えるように下へスクロール
+            messages.scrollTop = messages.scrollHeight;
+        });
+    </script>
+</body>
+</html>
