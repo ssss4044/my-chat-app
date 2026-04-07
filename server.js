@@ -1,42 +1,60 @@
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
-const io = require('socket.io')(http, {
-    maxHttpBufferSize: 2e7 // 画像送信のため20MBまで許可
-});
+const io = require('socket.io')(http, { maxHttpBufferSize: 2e7 });
+const mongoose = require('mongoose');
 
-// --- 履歴保存用の配列 ---
-let chatLog = [];
-const MAX_LOG = 100; // 保存する最大件数
+// --- 1. データベース接続 (MongoDB) ---
+const MONGODB_URI = process.env.MONGODB_URI || "あなたの接続文字列";
+mongoose.connect(MONGODB_URI).then(() => console.log("DB接続成功"));
+
+// メッセージの保存形式（スキーマ）の定義
+const ChatSchema = new mongoose.Schema({
+    room: String,
+    name: String,
+    text: String,
+    avatar: String,
+    image: String,
+    read: { type: Boolean, default: false }, // 既読フラグ
+    time: { type: Date, default: Date.now }
+});
+const Chat = mongoose.model('Chat', ChatSchema);
 
 app.use(express.static(__dirname + '/public'));
 
 io.on('connection', (socket) => {
-    console.log('ユーザーが接続しました');
+    // --- 2. ルーム機能 ---
+    socket.on('join room', async (roomName) => {
+        socket.join(roomName);
+        console.log(`ユーザーが部屋 [${roomName}] に参加`);
 
-    // 【新規】接続した人にだけ、これまでの履歴を全送信する
-    socket.emit('load log', chatLog);
-
-    socket.on('chat message', (data) => {
-        // 送信者の識別IDを付加
-        data.id = socket.id;
-
-        // 履歴に追加
-        chatLog.push(data);
-        if (chatLog.length > MAX_LOG) {
-            chatLog.shift(); // 100件を超えたら古い順に削除
-        }
-
-        // 全員にリアルタイム送信
-        io.emit('chat message', data);
+        // その部屋の過去ログをDBから取得して送る
+        const logs = await Chat.find({ room: roomName }).sort({ time: 1 }).limit(100);
+        socket.emit('load log', logs);
     });
 
-    socket.on('disconnect', () => {
-        console.log('ユーザーが退出しました');
+    socket.on('chat message', async (data) => {
+        data.id = socket.id;
+        // DBに保存（これでサーバーが消えても残る）
+        const newMsg = new Chat({
+            room: data.room,
+            name: data.name,
+            text: data.text,
+            avatar: data.avatar,
+            image: data.image
+        });
+        const savedMsg = await newMsg.save();
+        
+        // 部屋にいる全員に送信
+        io.to(data.room).emit('chat message', { ...data, _id: savedMsg._id });
+    });
+
+    // --- 3. 既読機能 ---
+    socket.on('mark read', async (msgId) => {
+        await Chat.findByIdAndUpdate(msgId, { read: true });
+        io.emit('update read', msgId);
     });
 });
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, "0.0.0.0", () => {
-    console.log(`サーバー起動中: ポート${PORT}`);
-});
+http.listen(PORT, "0.0.0.0", () => console.log(`Server: ${PORT}`));
