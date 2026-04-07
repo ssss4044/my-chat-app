@@ -3,81 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マイ・チャットアプリ (フル装備)</title>
+    <title>マイ・チャット (履歴保存版)</title>
     <style>
-        /* --- 基本スタイル --- */
         body { font-family: sans-serif; background-color: #7494c0; background-size: cover; background-position: center; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        
-        /* --- メッセージ表示エリア --- */
         #messages { list-style-type: none; margin: 0; padding: 20px; flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; }
-        
         .msg-container { display: flex; margin-bottom: 15px; align-items: flex-start; }
         .avatar { width: 40px; height: 40px; border-radius: 50%; background: #eee; margin: 0 10px; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(0,0,0,0.1); }
         .msg-content { max-width: 70%; display: flex; flex-direction: column; }
         .msg-item { padding: 10px; border-radius: 15px; word-wrap: break-word; background: white; border: 1px solid rgba(0,0,0,0.1); }
         .name-label { font-size: 0.7em; margin-bottom: 3px; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
         .chat-img { max-width: 100%; border-radius: 10px; margin-top: 5px; display: block; border: 1px solid rgba(0,0,0,0.1); }
-
         .my-row { flex-direction: row-reverse; }
         .my-msg { background-color: #85e249; border-top-right-radius: 2px; }
         .my-row .name-label { text-align: right; }
         .other-row { flex-direction: row; }
         .other-msg { border-top-left-radius: 2px; }
-
-        /* --- 入力フォーム --- */
         #form { background: #fff; padding: 10px; border-top: 1px solid #ccc; display: flex; gap: 5px; align-items: center; }
         #file-input { display: none; }
         .file-label, .settings-btn { cursor: pointer; font-size: 20px; padding: 5px 10px; background: #eee; border-radius: 5px; }
         #input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
         button[type="submit"] { background: #00b900; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
-
-        /* --- 設定画面 (モーダル) --- */
         #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
         .modal-content { background: white; padding: 20px; border-radius: 10px; width: 80%; max-width: 400px; display: flex; flex-direction: column; gap: 10px; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
         .close-btn { cursor: pointer; font-size: 20px; }
         .setting-item { display: flex; flex-direction: column; gap: 5px; }
-        .setting-item label { font-size: 0.8em; color: #666; }
-        .setting-item input[type="text"], .setting-item input[type="file"] { padding: 8px; border: 1px solid #ddd; border-radius: 5px; }
         .preview-avatar { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 1px solid #ddd; align-self: center; }
-        #save-settings { background: #00b900; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        #save-settings { background: #00b900; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
     <ul id="messages"></ul>
-    
     <form id="form">
         <span class="settings-btn" id="open-settings">⚙️</span>
-        <label class="file-label">
-            <input type="file" id="file-input" accept="image/*"> 📷
-        </label>
+        <label class="file-label"><input type="file" id="file-input" accept="image/*"> 📷</label>
         <input id="input" autocomplete="off" placeholder="メッセージ..." />
         <button type="submit">送信</button>
     </form>
 
     <div id="settings-modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <span>設定</span>
-                <span class="close-btn" id="close-settings">&times;</span>
-            </div>
-            
-            <div class="setting-item">
-                <label>名前</label>
-                <input type="text" id="user-name" placeholder="名前を入力" required />
-            </div>
-            
-            <div class="setting-item">
-                <label>プロフィール画像</label>
-                <img id="avatar-preview" class="preview-avatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
-                <input type="file" id="avatar-input" accept="image/*">
-            </div>
-
-            <div class="setting-item">
-                <label>背景画像</label>
-                <input type="file" id="bg-input" accept="image/*">
-            </div>
-
+            <div class="modal-header"><span>設定</span><span class="close-btn" id="close-settings">&times;</span></div>
+            <div class="setting-item"><label>名前</label><input type="text" id="user-name" placeholder="名前" required /></div>
+            <div class="setting-item"><label>プロフィール画像</label><img id="avatar-preview" class="preview-avatar" src=""><input type="file" id="avatar-input" accept="image/*"></div>
+            <div class="setting-item"><label>背景画像</label><input type="file" id="bg-input" accept="image/*"></div>
             <button id="save-settings">保存して閉じる</button>
         </div>
     </div>
@@ -85,114 +54,73 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        const form = document.getElementById('form');
-        const input = document.getElementById('input');
         const messages = document.getElementById('messages');
-        const fileInput = document.getElementById('file-input');
-        
-        // 設定用要素
-        const modal = document.getElementById('settings-modal');
-        const openSettingsBtn = document.getElementById('open-settings');
-        const closeSettingsBtn = document.getElementById('close-settings');
-        const saveSettingsBtn = document.getElementById('save-settings');
-        const nameInput = document.getElementById('user-name');
-        const avatarInput = document.getElementById('avatar-input');
-        const bgInput = document.getElementById('bg-input');
-        const avatarPreview = document.getElementById('avatar-preview');
-
-        // デフォルトアイコン
         const defaultAvatar = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
-        // --- ローカルストレージ & 初期設定 ---
+        // --- 設定の読み込み ---
         const loadSettings = () => {
-            nameInput.value = localStorage.getItem('chat-name') || '';
-            
-            const savedAvatar = localStorage.getItem('chat-avatar');
-            avatarPreview.src = savedAvatar || defaultAvatar;
-
+            document.getElementById('user-name').value = localStorage.getItem('chat-name') || '';
+            document.getElementById('avatar-preview').src = localStorage.getItem('chat-avatar') || defaultAvatar;
             const savedBg = localStorage.getItem('chat-bg');
             if (savedBg) document.body.style.backgroundImage = `url(${savedBg})`;
         };
         loadSettings();
 
-        // --- 設定画面の開閉 ---
-        openSettingsBtn.addEventListener('click', () => modal.style.display = 'flex');
-        closeSettingsBtn.addEventListener('click', () => modal.style.display = 'none');
-
-        // --- 画像プレビュー機能 (プロフィール画像) ---
-        avatarInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => avatarPreview.src = e.target.result;
-                reader.readAsDataURL(file);
-            }
-        });
-
-        // --- 設定の保存 ---
-        saveSettingsBtn.addEventListener('click', () => {
-            localStorage.setItem('chat-name', nameInput.value);
-            // プレビュー画像をそのまま保存
-            if (avatarPreview.src !== defaultAvatar) {
-                localStorage.setItem('chat-avatar', avatarPreview.src);
-            }
-
-            const bgFile = bgInput.files[0];
-            if (bgFile) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    localStorage.setItem('chat-bg', e.target.result);
-                    document.body.style.backgroundImage = `url(${e.target.result})`;
-                };
-                reader.readAsDataURL(bgFile);
-            }
-
-            modal.style.display = 'none';
-        });
-
-        // --- メッセージ送信 ---
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            
-            const file = fileInput.files[0];
-            const reader = new FileReader();
-
-            const sendData = (imageSrc = null) => {
-                socket.emit('chat message', {
-                    name: nameInput.value || '名無しさん',
-                    text: input.value,
-                    avatar: avatarPreview.src,
-                    image: imageSrc
-                });
-                input.value = '';
-                fileInput.value = '';
-            };
-
-            if (file) {
-                reader.onload = (e) => sendData(e.target.result);
-                reader.readAsDataURL(file);
-            } else if (input.value) {
-                sendData();
-            }
-        });
-
-        // --- メッセージ受信 ---
-        socket.on('chat message', (data) => {
+        // --- メッセージ表示関数 (履歴とリアルタイム共通) ---
+        const displayMessage = (data) => {
+            const isMe = data.id === socket.id;
             const container = document.createElement('li');
-            container.classList.add('msg-container', data.id === socket.id ? 'my-row' : 'other-row');
+            container.classList.add('msg-container', isMe ? 'my-row' : 'other-row');
             
             let contentHTML = `<span class="name-label">${data.name}</span>`;
-            if (data.text) contentHTML += `<div class="msg-item ${data.id === socket.id ? 'my-msg' : 'other-msg'}">${data.text}</div>`;
+            if (data.text) contentHTML += `<div class="msg-item ${isMe ? 'my-msg' : 'other-msg'}">${data.text}</div>`;
             if (data.image) contentHTML += `<img src="${data.image}" class="chat-img">`;
 
-            container.innerHTML = `
-                <img class="avatar" src="${data.avatar}" onerror="this.src='${defaultAvatar}'">
-                <div class="msg-content">${contentHTML}</div>
-            `;
-            
+            container.innerHTML = `<img class="avatar" src="${data.avatar}" onerror="this.src='${defaultAvatar}'"><div class="msg-content">${contentHTML}</div>`;
             messages.appendChild(container);
             messages.scrollTop = messages.scrollHeight;
+        };
+
+        // --- イベント受信 ---
+        socket.on('load log', (log) => { messages.innerHTML = ''; log.forEach(displayMessage); });
+        socket.on('chat message', displayMessage);
+
+        // --- 送信処理 ---
+        document.getElementById('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const file = document.getElementById('file-input').files[0];
+            const send = (img = null) => {
+                socket.emit('chat message', {
+                    name: document.getElementById('user-name').value || '名無し',
+                    text: document.getElementById('input').value,
+                    avatar: document.getElementById('avatar-preview').src,
+                    image: img
+                });
+                document.getElementById('input').value = '';
+                document.getElementById('file-input').value = '';
+            };
+            if (file) {
+                const r = new FileReader(); r.onload = (e) => send(e.target.result); r.readAsDataURL(file);
+            } else if (document.getElementById('input').value) {
+                send();
+            }
         });
+
+        // --- 設定モーダル処理 ---
+        document.getElementById('open-settings').onclick = () => document.getElementById('settings-modal').style.display = 'flex';
+        document.getElementById('close-settings').onclick = () => document.getElementById('settings-modal').style.display = 'none';
+        document.getElementById('avatar-input').onchange = (e) => {
+            const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onload = (ev) => document.getElementById('avatar-preview').src = ev.target.result; r.readAsDataURL(f); }
+        };
+        document.getElementById('save-settings').onclick = () => {
+            localStorage.setItem('chat-name', document.getElementById('user-name').value);
+            localStorage.setItem('chat-avatar', document.getElementById('avatar-preview').src);
+            const bgF = document.getElementById('bg-input').files[0];
+            if (bgF) {
+                const r = new FileReader(); r.onload = (e) => { localStorage.setItem('chat-bg', e.target.result); document.body.style.backgroundImage = `url(${e.target.result})`; }; r.readAsDataURL(bgF);
+            }
+            document.getElementById('settings-modal').style.display = 'none';
+        };
     </script>
 </body>
 </html>
